@@ -1,6 +1,6 @@
 # Architectural decision log
 
-Status: all entries **proposed**, dated 2026-11-16. Approval of architecture accepts these choices subject to the stated compatibility/product gates. Record implementation date, exact dependency versions and evidence when accepted; supersede decisions with new entries rather than silently changing financial behavior.
+Status: **accepted with owner revisions on 2026-11-19**. Original proposals dated 2026-11-16. History notes below preserve rejected choices; current decisions are authoritative. Phase 1 is authorized; later phases remain scoped to the roadmap. Savora is the working name, without trademark clearance.
 
 ## ADR-001 — Expo React Native with cloud iOS builds
 
@@ -16,15 +16,15 @@ Status: all entries **proposed**, dated 2026-11-16. Approval of architecture acc
 
 ## ADR-002 — Stable dependency combination with explicit compatibility gate
 
-**Decision:** prefer current stable Expo with stable NativeWind, npm lockfile and Expo-managed native peer versions; do not pin untested SDK 58/NativeWind combination in the plan.
+**Decision:** prefer current stable Expo with stable NativeWind, npm lockfile and Expo-managed native peer versions; select SDK 58 with bundled stable peers. Owner explicitly approved React Native StyleSheet for Phase 1 on 2026-11-19; defer NativeWind until stable compatibility is established.
 
 **Alternatives:** NativeWind prerelease; older SDK immediately; StyleSheet-only from start; installing latest React Native peers independently.
 
-**Rationale:** current Expo reference is SDK 58 while stable NativeWind guide explicitly covers SDK 57/v4.2.7. Compatibility must be proven, including the physical iPhone client and new native architecture.
+**Rationale:** Expo/npm identify SDK 58; stable NativeWind 4.2.7 explicitly documents SDK 57. An unsupported combination is avoided. Local compatibility checks are required; physical iPhone and signed-native results are recorded separately. Exact installed versions/evidence: [DEPENDENCIES.md](DEPENDENCIES.md).
 
 **Tradeoffs:** small up-front spike and potential approval of fallback; stable styling preference may conflict with latest SDK/Go availability.
 
-**Future:** pin resolved versions, supported Node LTS and EAS image; upgrade as a tested batch. An unsupported combination requires evidence and explicit revised choice, not silent prerelease adoption. Sources: [Expo versions](https://docs.expo.dev/versions/latest/), [NativeWind stable installation](https://www.nativewind.dev/docs/getting-started/installation), [Go mismatch](https://docs.expo.dev/troubleshooting/expo-go-version-mismatch/).
+**Future:** pin resolved versions, supported Node LTS and EAS image; upgrade as a tested batch. Future styling adoption requires a tested supported combination, not silent prerelease adoption. Sources: [Expo versions](https://docs.expo.dev/versions/latest/), [NativeWind stable installation](https://www.nativewind.dev/docs/getting-started/installation), [Go mismatch](https://docs.expo.dev/troubleshooting/expo-go-version-mismatch/).
 
 ## ADR-003 — One modular app and one Supabase backend
 
@@ -46,11 +46,13 @@ Status: all entries **proposed**, dated 2026-11-16. Approval of architecture acc
 
 **Rationale:** exactness, correction audit, transfer conservation and import identities without a full accounting platform.
 
-**Tradeoffs:** JSON/BigInt adapters required; ledger aggregates/operation triggers are more work than CRUD; asset-only model is not a general accounting system. Zero-balance account setup omits a zero-value entry.
+**Tradeoffs:** JSON/BigInt adapters required; ledger aggregates/operation triggers are more work than CRUD; MVP has asset accounts only; future asset/liability signs are explicitly distinct (ADR-015), not a general accounting system. Zero-balance account setup omits a zero-value entry.
 
 **Future:** provider staging/deduplication can post existing commands. Debt/FX need explicit new semantics; widening enum or currency labels alone is insufficient. Never overwrite balance with imported provider total.
 
 ## ADR-005 — Separate pooled goal reservations from real funds
+
+**Status/history:** approved unchanged on 2026-11-19. Goals are long-term objectives distinct from short-term Rewards; no arbitrary price threshold enforces this distinction.
 
 **Decision:** one current virtual allocation per goal against pooled liquid accounts; no account movement when funding a goal; no persisted reward wallet.
 
@@ -62,41 +64,45 @@ Status: all entries **proposed**, dated 2026-11-16. Approval of architecture acc
 
 **Future:** add allocation history/account earmarks only if needed, preserving invariant that sum reservations is not additional cash. Emergency reserve setting is separate; additional emergency goal must be intentional.
 
-## ADR-006 — Conservative deterministic reward engine and sequential queue
+## ADR-006 — Independent rewards with shared headroom
 
-**Decision:** H = liquid funds minus remaining ordinary category budgets, goal allocations, emergency reserve and buffer. Queue prefixes compete for H. Forecast uses manually confirmed I-X-G from next month-end, maximum 24 steps, assumptions always visible.
+**Status/history:** accepted revision 2026-11-19. The 2026-11-16 sequential queue/prefix reservation proposal was explicitly rejected; it is not the current policy.
 
-**Alternatives:** balance>=price; independent affordability per item; AI recommendation; detailed daily recurring-obligation cash-flow simulator.
+**Decision:** H = liquid funds minus ordinary budget/bill protection, goal reservations, emergency reserve and buffer. Independently compare each reward price to H; reorder only changes display/preferences. Multiple unlocks are alternatives sharing the same underlying dollars, not simultaneous reservations. Every actual purchase posts once and immediately invalidates/recomputes every reward. Forecast uses confirmed I-X-G, next-month-end steps, provisional maximum 24 months.
 
-**Rationale:** transparent, independently testable and realistic for manual MVP. No future income counted as current funds; no two wishlist items claim the same dollars.
+**Alternatives:** rejected strict queue; balance>=price; AI; full daily cash-flow forecast.
 
-**Tradeoffs:** conservative estimates, no exact bill/paycheck timing, reliance on manual completeness. Strict queue can block cheap lower items; users must reorder explicitly. Seven-day confirmation and five-minute snapshot freshness add friction in exchange for visible reliability.
+**Rationale:** users may choose a small reward or keep funds for a larger one. Goal allocations remain protected; no reward wallet or points.
 
-**Future:** dated obligations require a new policy/version and overlap rules with budgets; persisted unlock events only if notifications need them. Exact formula/examples/edge cases in [engine](REWARD_ENGINE.md).
+**Tradeoffs:** unlocked totals may exceed H, so UI must say “Choose from these rewards; buying one changes what remains affordable.” Batch affordability would need a separate sum check, not individual statuses. No payment authorization or automatic spending.
 
-## ADR-007 — Separate ordinary budget and reward expense categories
+**Future:** see [engine](REWARD_ENGINE.md) for overlap/recalculation/confirmation rules and examples. Configurable initial policies: 7-day confirmation, 5-minute cached snapshot, immediate mutation invalidation, 24-month forecast. Stale data warns/suppresses confident statuses but never blocks app access.
 
-**Decision:** immutable expense-category role ordinary/reward. Ordinary budgets protect baseline spending, reward purchases consume derived extra headroom and never release baseline budget reserve.
+## ADR-007 — Transaction-level ordinary/reward classification
 
-**Alternatives:** use all spending to decrement protected budget; add independent points/reward wallet; double-count planned purchases and queue entries.
+**Status/history:** approved with modification 2026-11-19. Replaces rejected category-level immutable spending_role; categories only describe what was purchased.
 
-**Rationale:** if a reward purchase decreases both L and R equally, H would remain unchanged, allowing repeated “rewards” against the same discretionary headroom. Separating roles avoids this while preserving all expenses in actual spending reports.
+**Decision:** expense ledger operation has ordinary/reward classification independently of category. Optional wishlist association supports spontaneous rewards. Ordinary budget-drawing expenses consume category budget; reward expenses reduce L without releasing budget/bill protection. Both count in total actual spending once. Correct/reclassify with atomic reversal and replacement, preserving audit and invalidating snapshots.
 
-**Tradeoffs:** users must understand optional purchases versus ordinary spending; one category cannot serve both roles. Reward categories have no monthly envelope cap beyond derived headroom in MVP.
+**Alternatives:** category role (rejected), separate wallet, decrement budget for every expense.
 
-**Future:** if users need rewards inside category budgets, redesign overlapping reservation rules with new tests/policy rather than adding another balance. This distinction specifically needs product approval.
+**Rationale:** the same dining category can represent ordinary lunch or a discretionary dinner. Reward spending must reduce derived headroom rather than be offset by released ordinary protection.
+
+**Tradeoffs:** reward→ordinary correction can legitimately release up to remaining budget protection, but no cash is created. Recompute from current ledger instead of incrementally crediting headroom; confirm impact, validate occurrence links and clear/reopen any wishlist link when no longer reward. Ordinary→reward restores budget reserve and reduces H. No unbounded benefit by toggling classification.
+
+**Future:** no new category migration when users change classification; detailed examples and tests in engine specification.
 
 ## ADR-008 — Single currency, asset accounts, online-first MVP
 
-**Decision:** USD-only checking/savings, posted manual transactions, complete monthly ordinary budgets, no offline edits or persistent financial cache; explicit I/X/G forecast settings.
+**Decision:** USD-only checking/savings, posted manual transactions, complete monthly ordinary budgets and manual monthly recurring obligations, no offline edits or persistent financial cache; explicit I/X/G forecast settings.
 
-**Alternatives:** multi-currency/credit/debt/recurring calendar/offline sync at launch.
+**Alternatives:** multi-currency/full debt ledger/daily cash-flow simulation/offline sync at launch.
 
 **Rationale:** bound the financial correctness surface and deliver meaningful purchase planning first.
 
 **Tradeoffs:** limited international/debt usefulness, network required for authoritative views and edits; no automatic bill protection outside entered budgets. Existing users' data cannot be migrated by simply changing currency symbol.
 
-**Future:** extend per-currency ledgers with explicit conversions, liability/account semantics, dated obligations and reconciliation policies as distinct features. Confirm USD and asset-only scope with owner before implementation.
+**Future:** extend per-currency ledgers with explicit conversions, liability/account semantics, dated obligations and reconciliation policies as distinct features. US audience, USD-only checking/savings creation and future liability compatibility are approved; see ADR-015/016.
 
 ## ADR-009 — RLS plus secure transactional commands
 
@@ -148,11 +154,11 @@ Status: all entries **proposed**, dated 2026-11-16. Approval of architecture acc
 
 ## ADR-013 — Tests throughout, Linux CI and early native proof
 
-**Decision:** pure financial tests + component tests in WSL, migration/pgTAP/real-user API isolation tests, early EAS iOS build and physical iPhone validation; ARM64 local stack verification required.
+**Decision:** pure financial tests + component tests in WSL, migration/pgTAP/real-user API isolation tests, prepared EAS profiles and separately tracked iPhone/signed-build milestones. No Docker/Supabase dependency in Phase 1; ARM64 backend checks occur when needed.
 
 **Alternatives:** simulator-only workflow requiring Mac; mocks only; testing/RLS deferred until release; production DB test fixtures.
 
-**Rationale:** financial invariants and data isolation are core functionality; early binary proof avoids late iOS surprises. Local Docker is currently unavailable in inspected WSL environment.
+**Rationale:** financial invariants and data isolation are core functionality; early binary proof avoids late iOS surprises. Local foundation checks do not require paid Apple enrollment or local backend tooling.
 
 **Tradeoffs:** device/manual accessibility coverage remains necessary; native automated iOS UI tests need hosted/macOS runners; local backend may need hosted disposable fallback on ARM64.
 
@@ -170,17 +176,50 @@ Status: all entries **proposed**, dated 2026-11-16. Approval of architecture acc
 
 **Future:** add durable milestone/unlock events with idempotency if notifications need them; subscriptions require server entitlements and platform billing review; OTA requires runtime/channel/environment policy. Recheck [Apple review rules](https://developer.apple.com/app-store/review/guidelines/) before release.
 
-## Outstanding approval decisions
+## ADR-015 — Future liabilities without implementing debt tracking
 
-| Question | Proposed answer | Required before |
-|---|---|---|
-| Initial audience/currency/accounts? | USD, checking/savings only, no debt/FX | Architecture/Phase 1 |
-| Rewards budget semantics? | Additional to ordinary budgets; separate category roles | Architecture/Phase 1 |
-| Wishlist competition? | Strict order; explicit manual reorder | Architecture/Phase 1 |
-| Planning/freshness thresholds? | Explicit reserves, 7-day confirmation/month rollover, 5-minute snapshot, 24-step forecast | Engine implementation |
-| Auth/offline requirements? | Verified email/password, online-first | Architecture/Phase 1 |
-| Early Apple account? | Prefer enrollment early for signed native proof | Native build gate |
-| Stack compatibility fallback? | Evidence first; supported prior SDK or StyleSheet only with approval | Phase 1 if spike fails |
-| Region/retention/recovery/privacy audience? | Decide based on launch geography and hosting capabilities; no invented legal retention period | Production provisioning |
+**Decision:** reserve account kinds checking/savings/credit_card/student_loan/auto_loan/mortgage/other with explicit asset/liability class and MVP constraint enabling only checking/savings assets. Signed liquid assets alone feed H. Liabilities represent positive amount owed; future net worth subtracts them. Principal repayment lowers cash and liability, not a second expense; borrowing is not income. Interest/fees are expense components. No debt tables/calculations now.
 
-Unresolved choices are explicit gates, not reasons to write speculative infrastructure. Present concrete alternatives/evidence when resolving them; keep this log synchronized with actual behavior.
+**Alternatives:** assume all accounts spendable; prematurely implement debt engine.
+
+**Rationale/tradeoffs:** retain ledger identities and modular operation validation while recognizing that future repayment is not ordinary sum-zero asset transfer. Historical manual loan-payment cash expenses need deliberate migration/reporting treatment.
+
+**Future:** enable types only with reviewed operation semantics, settlement overlap rules and tests; never treat credit limits as funds.
+
+## ADR-016 — Manual recurring obligations with explicit coverage
+
+**Decision:** monthly template and occurrence tables, optional ordinary payment links, partial settlements, overdue carryover and explicit budget/separate coverage. Protect max(category remaining budget, unpaid budget-covered bills) plus separately protected unpaid bills. Separate-covered payments do not release ordinary budgets. No debt account needed for a minimum loan payment.
+
+**Alternatives:** defer bills (superseded), automatically add all bills to full budgets (double counting), complex arbitrary recurrence scheduler.
+
+**Rationale/tradeoffs:** users can enter rent/utilities/minimum debt payments manually with deterministic overlap rules. Monthly cadence initially; review variable amounts, dates and month rollover. Unlinked payments cannot be guessed reliably. Coverage cannot also duplicate a goal/reserve.
+
+**Future:** other recurrence cadences/calendar forecasts need explicit extension; no worker infrastructure now.
+
+## ADR-017 — Local foundation completion independent of paid Apple enrollment
+
+**Decision:** WSL install/typecheck/lint/tests/Metro/Expo diagnostics and EAS config preparation complete local Phase 1 gates. iPhone testing, Expo credentials, signed development builds and TestFlight are separate external milestones. Paid Apple enrollment is not required to start or finish local foundation.
+
+**Alternatives/history:** supersedes 2026-11-16 Phase 1 acceptance requiring installed signed development binary.
+
+**Rationale/tradeoffs:** progress without a Mac or paid program; no claim that Expo Go/bundling validates native standalone dependencies.
+
+**Future:** enroll and link actual Expo project/signing before cloud device builds; use Xcode later from same source via Prebuild/config plugins. Production provisioning remains forbidden in Phase 1.
+
+## Approval and outstanding decisions
+
+| Topic                                                    | Current status                                     | Remaining gate                                                                               |
+| -------------------------------------------------------- | -------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| US/USD/checking+savings; future liabilities              | Approved                                           | Debt semantics implementation deferred                                                       |
+| Pooled virtual goals and separate Rewards                | ADR-005 approved                                   | No further product approval                                                                  |
+| Independent reward eligibility/display order             | ADR-006 accepted revision                          | Shared-funds UI disclosure/test                                                              |
+| Transaction-level classification; optional wishlist link | ADR-007 accepted revision                          | Reversal/reclassification tests in later phases                                              |
+| Recurring obligations                                    | Approved, ADR-016                                  | Phase 3 implementation/security tests                                                        |
+| Freshness/forecasts                                      | Approved provisional configurable policies         | Reassess with actual usability evidence                                                      |
+| Email/password, verified auth, online-first              | Approved                                           | Auth implementation Phase 2                                                                  |
+| SDK 58 + StyleSheet; defer NativeWind                    | Explicitly approved 2026-11-19                     | Exact version and local diagnostics evidence                                                 |
+| Paid Apple membership                                    | Not Phase 1 prerequisite                           | Signed device build/TestFlight pending credentials                                           |
+| US hosting/privacy/retention/recovery                    | US region preferred, no Phase 1 provisioning       | Select region, actual log/backup retention, legal requirements and RPO/RTO before production |
+| Bundle ID/Expo ownership/product name                    | Local identifiers provisional, Savora working name | Confirm owned namespace, Expo project and name availability before distribution              |
+
+No previously rejected sequential-queue or category-role rule remains active. New major architecture changes still require explanation/approval; minor foundation choices proceed under current authorization.

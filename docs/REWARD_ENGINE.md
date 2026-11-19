@@ -1,129 +1,119 @@
-# Deterministic affordability engine v1
+# Savora deterministic affordability engine v1
 
-Status: proposed policy awaiting approval. This is a planning tool, not payment authorization or a guarantee of future funds. Manual data can omit real obligations. No statistical inference, credit advice, interest, investment returns or AI. A pure TypeScript module must run without React, native APIs, Supabase or network access.
+Approved policy revision 2026-11-19; design only, implementation in Phase 5. Supersedes the 2026-11-16 sequential wishlist/prefix model and category-level spending roles (see ADR-006/007). This is explainable planning, not payment authorization or guaranteed future funds. No AI, credit scoring, points or reward wallet.
 
-## Policy
+## Product policy and contract
 
-Reward purchases use money remaining **after** protecting the rest of the current month's ordinary budget, pooled goal allocations, emergency reserve, and safety buffer. Future income is never treated as money available now. The wishlist is a strict sequential purchase queue: an inexpensive lower item cannot jump ahead just because it fits. Reordering is an explicit user decision.
+**Goals: save toward something important.** Explicitly allocated existing liquid funds are protected. **Rewards: enjoy what you can afford today.** Each reward independently compares its price to the same discretionary headroom. Order/priority controls display only. No arbitrary price threshold forces an objective into Goals or Rewards. A wishlist entry is a desire, not an expense or reservation.
 
-Ordinary monthly budgets cover living costs and an unplanned allowance. Reward categories (for example electronics or hobbies on the wishlist) track extra optional spending separately and do not draw down ordinary budget reserves. This is essential: recording a reward purchase must reduce reward headroom, not release an equal amount of ordinary budget and enable repeated purchases. No separate stored reward wallet or points balance. Categorizing an ordinary expense as a reward changes protected funds differently; explain category roles and show both in overall spending reports. No category may simultaneously be ordinary and reward.
+`evaluateAffordability(snapshot, asOfDate, policy)` is pure TypeScript, without React/Supabase/native/network imports. Inputs are validated immutable data, explicit local date/timezone and server capture time/revision. API money is decimal strings; domain arithmetic uses bigint cents. Reject fractions, scientific notation, unchecked number conversions, NaN, mixed currencies and invalid IDs/dates. Monetary inputs have schema caps; exact sums may exceed JavaScript safe integers. Serialize results as decimal strings; bounded integer basis points for progress. Inject clock/policy for deterministic tests.
 
-## Contract
+| Input       | Required content                                                                                          |
+| ----------- | --------------------------------------------------------------------------------------------------------- |
+| Accounts    | Signed liquid checking/savings asset balances, per-account balance_confirmed_at, currency USD             |
+| Budgets     | Current local month category limits and budget-drawing ordinary expense totals after reversals            |
+| Obligations | Current and overdue active occurrences, expected amount, paid amount, coverage, category and confirmation |
+| Goals       | Current pooled reservations A, target/priority and planned monthly contributions                          |
+| Settings    | Emergency reserve E, buffer B, reviewed month, plan_confirmed_at, onboarding completeness                 |
+| Forecast    | Confirmed monthly net income I, ordinary future spending X, savings commitments G (null means unknown)    |
+| Rewards     | Unique IDs, positive prices, display positions, optional dates/categories; purchased/archived excluded    |
+| Policy      | Configurable confirmation age 7 days, cached snapshot age 5 minutes, forecast horizon 24 months, version  |
 
-`evaluateAffordability(snapshot, asOfDate, policy)` returns results and a calculation breakdown; inputs are immutable validated DTOs. Monetary DTO fields are decimal strings at API boundary, parsed to `bigint` cents in domain. Accept no fractional cents, exponential notation, NaN, Infinity or unchecked JS number conversion. Ratios use exact integer basis points; output money serializes to strings. The clock, timezone, engine version and horizon are explicit, so identical inputs yield identical outputs.
+Outputs: status (`unlocked`, `upcoming`, `locked`) only with reliable required data; a separate reliability (`current`, `stale`, `incomplete`, `invalid`) controls whether a status may be presented confidently. With stale/incomplete data return no confident status/date (UI shows “Needs review” or “Estimate outdated,” not a usable unlock). Include reason codes, snapshot/confirmation timestamps and revision, exact breakdown L/R/O/A/E/B/H/D, per-item shortfall/progress, conditional projection and assumptions. Typed invalid-input failure contains no fabricated balances; show a safe unavailable state. App access/history and recording real purchases remain available irrespective of affordability reliability.
 
-| Input | Required content |
-|---|---|
-| Snapshot metadata | User currency, server capture time, financial revision, caller-supplied local as-of date |
-| Actual accounts | Active liquid checking/savings balances from posted ledger, including negatives |
-| Current plan | All ordinary category budget limits and net posted ordinary spend for local current month, including archived historical categories |
-| Goals | Current virtual allocations, targets and explicit monthly contribution intentions |
-| Protected settings | Emergency reserve E, additional buffer B, completed onboarding and plan confirmation time |
-| Forecast | Confirmed monthly net income I, full ordinary expenses X, monthly savings commitments G; nullable until entered |
-| Queue | Unique active IDs/positions, strictly positive prices, priorities, categories, optional target dates; purchased/archived excluded |
-| Policy | Version v1, 7-day plan confirmation validity, 5-minute live snapshot validity, 24 monthly forecast steps |
+## Protect commitments without overlap
 
-Freshness thresholds are proposed product decisions, not hidden constants. User must confirm that all balances/expenses have been recorded, all remaining monthly obligations are budgeted, and forecast inputs are intentional. Merely fetching the database again does not renew plan confirmation. Any month rollover, new unbudgeted category, or material planning change clears confirmation. A snapshot older than 5 minutes must be refreshed before an actionable unlock, even with a confirmed plan. Record actual purchases whether fresh/unlocked or not.
+Expense **category** describes what; expense **operation spending_classification** is ordinary or reward. Same dining category may serve both. Income/transfers/opening/adjustments are not reward/ordinary purchases. Linked reversals inherit the original classification and settlement source to undo exactly.
 
-| Output | Meaning |
-|---|---|
-| status | `unlocked`, `upcoming`, `locked` |
-| reasonCodes | Missing/stale plan, insufficient funds, queue ahead, reserve deficit, no surplus, outside horizon, invalid input |
-| breakdown | Actual L, protected R/A/E/B, signed headroom H, usable D, queue-ahead Q, required total, shortfall, category overspends |
-| progressBps | Item-specific currently funded proportion, 0..10000, not an account or goal allocation |
-| projection | Nullable estimated month-end, months, modeled surplus F, queue assumptions, forecast horizon |
-| provenance | Snapshot revision/time, plan confirmation time, policy version and explicit assumptions |
-
-Invalid structural inputs return a typed validation failure plus no actionable results; UI displays unavailable/Locked with reason, never a fabricated zero-balance estimate. Missing planning data is structurally valid and returns Locked with setup guidance. Do not expose raw validation exceptions as financial advice.
-
-## Current headroom
-
-All sums use exact cents. For ordinary category c:
+For category c and each active obligation occurrence j:
 
 ```text
-spent[c] = max(0, net ordinary expense debits after linked reversals this month)
-remaining[c] = max(0, limit[c] - spent[c])
-R = sum(remaining[c])
-L = sum(actual active liquid account balances, including overdrafts)
-A = sum(all live goal reservations)
-H = L - R - A - E - B
+S[c] = max(0, net ordinary expense debits drawing on category budget this month)
+       # excludes reward expenses and payments of separate-covered obligations
+BR[c] = max(0, budget_limit[c] - S[c])
+paid[j] = max(0, net linked ordinary payments after reversals, across dates)
+U[j] = max(0, expected[j] - paid[j])
+BO[c] = sum(U[j] for budget-covered current/overdue occurrences in category c)
+R = sum(max(BR[c], BO[c]))
+O = sum(U[j] for separately protected current/overdue occurrences)
+L = sum(signed active liquid asset balances, including overdrafts)
+A = sum(live goal reservations)
+H = L - R - O - A - E - B
 D = max(0, H)
 ```
 
-`R` protects each category separately; overspending groceries must not cancel rent reserve. Zero-budget categories with actual ordinary spending have no remaining reserve but show an overspend. Missing budget rows for active ordinary categories blocks all unlocks until reviewed. Reward-category spending is excluded from spent[c] and already reduces L through the ledger. Transfers never alter total L, ordinary spending or income. Allocations alter A only, not L. Forecasts never alter L.
+Budget-covered obligations are inside budget protection, not added again: `max`, not sum. If unpaid bills exceed remaining budget, their excess is protected too, with a planning warning. Separately protected obligations add once through O; their payments decrease O and L, **not** ordinary category budget BR. Obligation coverage cannot also duplicate A/E/B: a loan minimum is an obligation, a future savings purchase is a goal; explicit review prevents duplicate representation. All active expense categories need an explicit budget row (zero may be intentional). Archived category history remains in calculations. Future months' bills are forecast assumptions, not immediate O; past unpaid bills carry forward until paid/waived.
 
-Emergency reserve and buffer are additive, separate protected buckets. A goal labelled emergency fund is **additional** unless the user elects to use the reserve setting instead and releases that goal allocation. Prevent accidental double representation during onboarding; never silently deduplicate by goal name. Underfunded commitments produce signed negative H and explicit deficit `max(0,-H)`. A cannot be clipped away to make a reward appear affordable. A negative individual account balance shows a warning even if the total pool is positive; no account-level bill-timing guarantee is made.
+Obligations support monthly manual templates, month-end clamping, estimated variable bills, explicit occurrence review, partial/multiple linked payments and waiver. Paying before due date/month is recognized by the occurrence link. Unlinked expenses do not automatically settle bills; request review/link correction. No debt ledger is needed for student-loan/car/credit-card minimum obligations. This month-level protection cannot guarantee exact timing or compensate for omitted bills/income.
 
-For active item k sorted by queue position:
+Reward expenses, including spontaneous ones, reduce L and do not reduce R/O. Ordinary purchases reduce L and may release BR/O; their overspend reduces H. Transfers between liquid assets leave L/H unchanged. Goal funding changes A only; releasing changes A only, never L. Account corrections change L through ledger adjustments. Emergency reserve and buffer are separate additive protections; an emergency goal is additional unless explicitly released to use reserve setting instead. Negative H displays deficit `max(0,-H)`; never clip reservations to manufacture headroom. Future liability balances/credit limits do not enter L.
 
-```text
-Q[k] = sum(prices of every active item ahead of k)
-T[k] = Q[k] + price[k]
-funded[k] = min(price[k], max(0, D - Q[k]))
-shortfall[k] = max(0, T[k] - H)
-progressBps[k] = floor(10000 * funded[k] / price[k])
-```
+## Independent eligibility and projection
 
-All prefix sums are exact. Reservation by Q is a simulation, never persisted money. Multiple rows may be Unlocked only if their cumulative prices fit H; this does not count the same dollars for each independently. A target date is a preference and never changes reserve policy or gives priority over the queue. Current target-date misses are labels, not guarantees or automatic reprioritization.
-
-Unlocked iff plan/snapshot valid **and** `H >= T[k]`. Current account balance exceeding price alone is insufficient. An unlocked item can become locked when new spending, prices or priorities change. It is not a durable entitlement.
-
-## Projection and statuses
-
-Use one conservative user-confirmed steady monthly surplus, not a calendar cash-flow simulator:
+For each active item i, regardless of order:
 
 ```text
+unlocked[i] = reliable current data AND H >= price[i]
+shortfall[i] = max(0, price[i] - H)
+progressBps[i] = floor(10000 * min(price[i], D) / price[i])
 F = I - X - G
-H[n] = H + n * F, for n=1..24
-n[k] = smallest n where H[n] >= T[k]
+projectedHeadroom[n] = H + n * F, n=1..24
+estimatedStep[i] = smallest n where projectedHeadroom[n] >= price[i]
 ```
 
-`X` is the full future ordinary monthly spending plan, not remaining current-month R. Require X >= current total ordinary budget limits; otherwise future expenses are inconsistent. `G` must cover the sum of active goal monthly intentions. I/X/G may explicitly be zero; null is unknown. Assume emergency/buffer requirements unchanged, no additional purchases beyond queue prefixes, prices stable, goals retain their reserves, and G keeps being protected even after a goal hits target. This deliberately does not release completed-goal contributions or use interest. Users can revise assumptions after a real goal completion. Projections extend headroom without generating projected transactions or allocations.
+Each row describes an **alternative**. Several unlocked prices can sum above D. Never sum row progress amounts into a funded total or say all unlocked items can be bought together. UI discloses “These rewards share the same available funds. Buying one changes what remains affordable.” A hypothetical bundle would require `sum(prices)<=H`; no bundle purchase feature in MVP. A $1,500 first item never blocks an $8 coffee.
 
-Start growth at the **next** month-end; no partial current-month credit for unreceived income. `n=1` means last day of next month in user timezone. Do not claim this model predicts the date a paycheck arrives. Even if current ordinary reserve would expire earlier, the model carries it conservatively in H and uses net F only thereafter. This may delay estimates but avoids inventing detailed cash timing. UI says “Estimated by [month], assuming $F/month remains after expenses and savings,” with the underlying I/X/G and queue assumptions accessible.
+Current valid data and H>=price: **Unlocked**. Otherwise coherent known forecast, F>0, and reachable in horizon: **Upcoming**, with conditional estimated month-end. Otherwise **Locked** with insufficient funds/no positive forecast/outside horizon reasons and no precise date. Missing/stale confirmation is a separate needs-review state, not proof of insufficient cash. An actual purchase is always recordable even if Locked, outdated or above estimated price. There is no reservation/authorization by viewing an unlock.
 
-1. Valid plan and H>=T: **Unlocked**, projection unnecessary.
-2. Valid plan, insufficient H, known coherent forecast, F>0, reachable within 24 steps: **Upcoming**, estimated month-end and shortfall. Negative H must be recovered before funding queue prices.
-3. Missing/stale inputs, F<=0 with insufficient headroom, inconsistent forecast, or beyond horizon: **Locked**, reason and no date. A stale snapshot never produces actionable Unlocked/Upcoming. A currently unlocked item does not need positive future surplus if its current monthly plan is complete.
+X covers a full future ordinary month, not current remainder. Require X at least the coverage-aware monthly plan: sum over categories of max(budget limit, monthly budget-covered template totals), plus separate template totals. No overlap with G; G must cover active goal contribution intentions. Missing X/I/G suppresses forecasts; explicit zero is distinct. Assume stable income/expenses/prices/reserves, no intervening discretionary purchases, continuing protected savings even after goal targets, and unchanged obligation schedule unless manually revised. Do not count future income as current L. No interest/FX or automatic trend extrapolation.
 
-“Locked” is a model result, not a prohibition on recording a purchase. No countdown implying certainty. Goals get separate progress `floor(10000*allocation/target)` and an optional estimated completion month using `ceil((target-allocation)/plannedMonthly)` with the same next-month-end convention. Only show goal estimates when the overall confirmed forecast supports all goal intentions and I-X>=G; otherwise show “No funded contribution plan.” Goal date estimates do not feed money back into reward calculations.
+Growth starts at next month's **end**, no partial-current-month credit: from 2026-11-19, step 1 is 2026-12-31, step 3 is 2027-02-28. Existing protection is carried conservatively into H and then grows by net F; this is not a bill/paycheck calendar simulator. Label “Estimated by [month] if $F/month remains after expenses and savings; assumes no intervening reward spending.” Optional target dates do not override protection or order. Goals may extend beyond the 24-month reward horizon; show their progress/target date without invented precise completion dates. Goal contribution projections require coherent funded assumptions, never release their money into Rewards automatically.
 
-## Worked examples (USD)
+## Freshness and recalculation
 
-### Laptop and competing purchases
+Each manually confirmed account has balance_confirmed_at; assumptions/obligations have confirmation times and a reviewed local month. Seven days is a provisional configurable policy, not an immutable rule. Use server time (not arbitrary device clock) for age comparisons. Re-fetching a snapshot does not confirm the underlying manually entered data. New-month review includes budgets, recurring occurrences and forecast assumptions. Users may continue using the app while stale; show timestamps/outdated warning, suppress confident current unlock/date until relevant data is reviewed.
 
-L=$4,000, R=$1,200, A=$1,000, E=$1,000, B=$200. H=D=$600. Laptop first, price $1,500: currently funded $600, remaining $900, progress 40%. Forecast I=$4,000, X=$3,200, G=$500 gives F=$300. Need 3 steps, so Upcoming. As of November 16, 2026, estimate is February 28, 2027 (next month-end plus two additional months), explicitly conditional.
+Five-minute snapshot age is a maximum, not permission to reuse known-invalid data. Immediately invalidate on **any** eligibility-affecting write, before another unlock can render: account adjustment, transaction add/correction/reversal/reclassification, allocation/release/reallocation/completion, budget/bill/coverage/payment/waiver edits, reserve/forecast/confirmation or wishlist price changes. Wait for backend commit; no optimistic financial success. Refetch atomic snapshot, compare revision and recompute all items. Within five minutes, cross-device changes need detection: refresh on focus/reconnect and before purchase preview/save; revision conflict forces refresh. No offline authoritative unlocks or writes; last-known view is labelled. Fetch/error/loading states must not retain a confident obsolete unlock. Reorder only affects display, not numerical eligibility.
 
-Headphones behind laptop cost $200: Q=$1,500, T=$1,700, item-specific current progress 0%, shortfall $1,100, 4 steps → March 31, 2027. Headphones cannot separately claim the same $600.
+Financial edits/deletes are reversal/replacement commands, not overwritten/hard-deleted rows. Reclassification is one owner-locked transaction: reverse original with its old classification/obligation link, post replacement once with new classification, update/clear wishlist association as appropriate, increment revision. Overall spending counts net actual amount once. Reclassifying a paid obligation needs valid ordinary replacement/link or explicitly reopens the bill; reward cannot settle an obligation. Reclassifying linked wishlist reward to ordinary reopens item/clears purchase link, with confirmation; ordinary→reward can optionally complete an item atomically but need not have one. Reversing a purchase restores funds and item together. Do not incrementally add “reclassification credits”; recompute R/O/H from the resulting ledger.
 
-### High balance, constrained cash
+## Worked examples (USD, exact cents internally)
 
-L=$5,000, R=$2,500, A=$1,500, E=$1,000, B=$200 produces H=-$200. A $100 item is not unlocked. With no positive forecast it is Locked. With F=$100, it takes 3 steps to cover the $200 deficit plus price, not 1. Display commitments exceed current liquid funds by $200.
+Common baseline unless stated: L=$2,000; A=$500; E=$500; B=$100; R=$700; O=$0; H=D=$200. Dining ordinary limit=$300 and ordinary spend=$100, so its BR=$200 within R; other protected category remainders total $500. All confirmations current unless stated. These are separate scenarios, not one running balance.
 
-### Exact boundary and purchase recording
+| Scenario                         | L before→after | A before→after | R before→after |   O | H before→after | Explanation                                                      |
+| -------------------------------- | -------------: | -------------: | -------------: | --: | -------------: | ---------------------------------------------------------------- |
+| 1. Ordinary dining purchase $50  |    2,000→1,950 |        500→500 |        700→650 |   0 |        200→200 | Already protected budget is consumed; totals report $50 once     |
+| 2. Wishlist reward dinner $100   |    2,000→1,900 |        500→500 |        700→700 |   0 |        200→100 | Actual reward does not release dining BR; item becomes purchased |
+| 3. Spontaneous reward coffee $15 |    2,000→1,985 |        500→500 |        700→700 |   0 |        200→185 | Same category is allowed; no wishlist ID required                |
+| 4. Allocate $100 to a goal       |    2,000→2,000 |        500→600 |        700→700 |   0 |        200→100 | Same real funds, protected by A; releasing reverses A/H only     |
 
-L=$2,000, R=$700, A=$500, E=$500, B=$100 gives H=$200. Queue $150 then $50: both Unlocked cumulatively. Record first purchase as a **reward expense** $150. L becomes $1,850; R and A unchanged, first item becomes purchased and leaves queue. New H=$50; second is still unlocked. Recording another $50 leaves H=$0; no extra funds were created. If paid $180 instead, second has only $20 progress and is not currently unlocked. Actual purchase recording is one atomic expense+wishlist command, not a separate balance decrement.
+5. **Multiple alternatives:** baseline $200 unlocks coffee $8, donuts $30, video game $60 and dinner $100 independently. Laptop $1,500 is Locked with no forecast, or Upcoming only with coherent positive forecast. Sum of unlocked prices need not fit $200; no dollars are reserved to individual rows. Priority/reorder cannot change these statuses. Goals typically hold larger long-term objectives; user may still choose laptop as a reward.
 
-### Ordinary spending and overrun
+6. **Purchase then recalculate:** add $150 headphones to the baseline independent choices: Unlocked initially. Purchase $100 dinner: L=$1,900, A=$500, R=$700, O=0, E=$500, B=$100, H=$100. Headphones now not unlocked; coffee/donuts/game remain individually affordable alternatives. Purchase $60 game next: L=$1,840, H=$40; $100 dinner is no longer affordable if re-added. Wishlist estimated price never decrements cash separately; actual transaction is the sole expense. Different actual price uses that actual amount.
 
-Ordinary groceries limit $400, spend $300: R includes $100. Record $50 ordinary groceries: both L and R fall $50, so H unchanged. Record another $100: L falls $100 but R can fall only the remaining $50; H falls $50. Rent reserve in another category stays protected. Reward purchases never reduce this groceries reserve.
+7. **Ordinary→reward reclassification:** after baseline's $50 ordinary dining purchase, L=$1,950, R=$650, H=$200. Atomically reverse/replace that $50 as reward. L stays $1,950, A=$500/O=0/E=$500/B=$100 unchanged, ordinary spend restores to $100, R=$700, H=$150. Total actual expense still $50, not $100; no cash created. Originally consuming ordinary protection cannot also qualify as a free reward.
 
-### Allocation, transfers and corrections
+8. **Reward→ordinary reclassification:** after baseline's $50 reward expense, L=$1,950, R=$700, H=$150. Replace as ordinary dining: L unchanged, R=$650, H=$200, A/O/E/B unchanged. This legitimate $50 reserve release consumes $50 of the pre-existing dining budget. Toggling back returns R=$700/H=$150, not $250. Above remaining category budget, only remaining reserve can release; any overspend still reduces H. Obligation protection may limit release further. Clear/reopen linked wishlist purchase on change to ordinary.
 
-Allocate $100: L unchanged, A increases $100, H drops $100. Release $100: L unchanged, A drops $100, H rises $100. Transfer $250 checking→savings: two offsetting legs, L/A/H unchanged. Reversing an ordinary expense changes historical spend and account funds together; reversing a linked reward purchase restores funds and the wishlist item atomically. None produces income from thin air.
+9. **Underfunded protections:** L=$1,000, A=$1,200, R=$300, O=$100, E=$200, B=$100 → H=-$900, D=0. Account funds cannot cover goals alone ($200 gap); total protected commitments exceed liquid assets by $900. Do not shrink A or invent funds. With F=$100 a $100 reward needs 10 monthly steps, not one, assuming recovery is actually feasible. Actual expenses remain recordable and worsen deficit; explicit release/reallocation/review is required.
 
-## Edge cases and product limits
+10. **Stale information:** baseline amounts numerically yield H=$200, but one account confirmed 8 days ago makes reliability stale. Show last-known values and “Reconfirm balances,” no confident Unlocked/date; app remains accessible. A six-minute cached snapshot with current confirmations needs refetch. New $100 reward expense invalidates immediately even at one minute: after commit L=$1,900, H=$100; a $150 item must not retain its former unlock. Month rollover requires relevant plan/obligation review, not silent reuse.
 
-Reject duplicate queue positions/IDs, zero or negative prices/targets, unsupported/mixed currencies, excessive monetary values, malformed date/timezone, future snapshot timestamps beyond small documented clock tolerance, and allocations beyond target. Negative balances are valid, not malformed. Require server capture time and server confirmation time; device clock is not authoritative for staleness. Crossing a month requires current-month budgets and reconfirmation. Imported duplicates/pending funds do not exist in MVP; later import reconciliation must preserve exact ledger semantics.
+### Obligation coverage examples
 
-Reorder/price/category changes invalidate results. Re-fetch and compare financial_revision before presenting a record-purchase preview; on revision conflict refresh, show changed amounts and let the user confirm actual entry. No automatic spending, auto-allocation or notification triggered by an untrusted client status. A goal-funded purchase must atomically release its allocation with an expense; otherwise the app would continue protecting already-spent funds. Overspending is recorded and displayed candidly even when it violates protected commitments.
+Budget-covered rent: budget limit=$1,000, spend=$0, unpaid rent=$1,000. Protect max(1,000,1,000)=$1,000, not $2,000. Paying $400 ordinary linked rent lowers L $400, BR to $600 and unpaid to $600; R falls $400 so H unchanged. If other ordinary spending used $300 before rent, BR=$700 but unpaid rent=$1,000: protect $1,000; do not free unpaid rent money by spending elsewhere.
 
-No precise recurring bill dates, overdraft fees, debt minimums, taxes, emergency suitability assessment or intra-month paycheck timing is modeled. The setup affirmation and visible formula make these limitations clear. Introduce a dated obligation schedule only in a later version with explicit overlap rules so bills are not counted both individually and inside budgets. Forecasts based on irregular income require deliberate conservative manual inputs; no automatic extrapolation from a few recorded deposits.
+Separate-covered $200 insurance with $300 budget remainder in the same category: R includes $300 and O includes $200. Paying $50 linked ordinary insurance reduces L $50 and O to $150; BR/R unchanged, H unchanged. A $50 reward in that category lowers L/H $50 and settles neither reserve. Overdue unpaid amounts stay protected; reversal of payment increases unpaid reserve and restores L together. No additional E/A reserve for the same insurance bill. Forecast X includes future insurance once, outside the budget coverage sum.
 
-## Testing specification
+### Forecast example
 
-Use Jest table-driven pure-domain tests with exact cents/string assertions and injected dates. Golden fixtures mirror every example. Boundary tests cover H exactly equal price/prefix, one cent under/over, zero surplus, negative surplus, negative H, no accounts/items/goals, zero explicit reserves, huge sums, malformed money, division rounding and first/last month days including leap years/DST/timezone changes. Test unknown vs zero forecast separately. Freshness at threshold, month rollover, incomplete budgets and incoherent X/G must suppress dates and unlocks.
+L=$4,000, R=$1,200, O=0, A=$1,000, E=$1,000, B=$200 → H=$600. I=$4,000, X=$3,200 (includes all recurring costs once), G=$500 → F=$300. $1,500 laptop shortfall=$900 → 3 steps (February 28, 2027 from November 19); $200 headphones are independently Unlocked now regardless of laptop position. Buying $200 headphones lowers H to $400; laptop then needs 4 steps with the same assumptions. No promise that either date will occur.
 
-Invariant/property-style tests: transfer leaves L/H unchanged; allocation changes only A/H; price increase cannot improve affordability; higher reserve/expense/goal commitment cannot improve a result; increasing available funds cannot worsen it; one reward purchase reduces H by actual price; lower queue items never receive headroom already assigned to predecessors; cumulative unlocked prices<=H; reversal restores exact prior totals; no input mutation; same input/version yields byte-equivalent serialized result. Simple deterministic generated fixtures suffice initially, without a property-testing dependency.
+## Testing specification for later phases
 
-Integration tests compare SQL ledger/category aggregates against pure-domain fixtures, including reversal classification and transfer exclusion. Test owner-lock concurrency, revision conflicts, retry IDs and atomic purchase status updates. Component tests verify status+reason+assumptions, stale warning, accessible labels and absence of guaranteed language. Physical-device tests verify rendering/currency input and refresh after writes. No screenshots or mocked Supabase tests substitute for financial invariant and RLS tests.
+Golden fixtures cover all ten scenarios, obligation examples and forecast. Exact one-cent boundaries, zero/negative/unknown surplus, empty accounts/goals/rewards, explicit zero reserves versus missing values, budget overspend, partial/early/late payments, arrears, bill waiver/reversal, variable template revisions, missing budgets, month-end/DST/leap dates and >24-month goals. Test freshness at boundary, account-specific staleness, five-minute expiry, immediate mutation invalidation and cross-device revision conflict. No real financial data in fixtures.
+
+Invariants: same snapshot/policy deterministic and immutable; transfer leaves L/H unchanged; allocation affects A not L; reward purchase reduces H by actual price; ordinary expense cannot free more than applicable protection; reclassification preserves actual L/total spend and round-trip returns same H; independent order invariance; unlocked means price<=H individually, **not** sum unlocked prices<=H; no persisted per-item claim; purchases/reversals occur once with optional wishlist linkage; liability/credit excluded; recurring overlap counted once. Raising protected reserves or price cannot improve affordability. Larger L cannot worsen a result. Missing data cannot appear affordable.
+
+Integration tests compare SQL aggregates to domain fixtures with genuine RLS users, exact string serialization, operation idempotency/concurrency, atomic wishlist+expense changes and reversal classification/payment coverage. UI tests cover shared-funds disclosure, stale/loading/errors, explanation and conditional date language. Native/device tests verify refresh/input/accessibility. No financial engine is implemented in Phase 1.

@@ -1,33 +1,40 @@
-# Earnest implementation plan
+# Savora implementation plan
 
-Status: **architecture approval required before Phase 1**. This document describes future work, not commands executed. No application initialization, installs, Supabase setup or code is authorized by this planning task. All financial rules are specified in [REWARD_ENGINE.md](REWARD_ENGINE.md), tables in [DATABASE_SCHEMA.md](DATABASE_SCHEMA.md), platform/security/workflow in [ARCHITECTURE.md](ARCHITECTURE.md), and tradeoffs in [DECISIONS.md](DECISIONS.md).
+Status: architecture and Phase 1 approved on 2026-11-19 with owner revisions. Later phases remain planned. [Engine](REWARD_ENGINE.md), [schema](DATABASE_SCHEMA.md), [architecture](ARCHITECTURE.md), [decisions](DECISIONS.md) define approved behavior; [development setup](DEVELOPMENT.md) records actual foundation commands/results.
 
 ## Scope and release discipline
 
-Solo-developer vertical slices; each ends with a reviewable PR, passing relevant tests, updated docs and a usable demonstration. No fixed delivery estimates before the compatibility spike. Start security/financial tests alongside features; Phase 7 is a final independent validation pass, not the first security work. Avoid bank integrations, debt/FX, payments, subscriptions, remote notifications, persistent offline writes and advanced gamification. Never use real financial data in CI/fixtures.
-
-Approval must establish USD-only assets, email/password auth, online-first behavior, virtual pooled goal allocations, ordinary vs reward category distinction, budget-based obligation protection, strict wishlist order and manual forecasts. User explicitly enters reserve and buffer (zero permitted), confirms current-month completeness, and accepts forecast assumptions. Proposed plan reconfirmation: 7 days and monthly rollover; live snapshot refresh: 5 minutes; projection horizon: 24 months. Confirm these thresholds and early Apple enrollment availability. NativeWind/SDK fallback is not preapproved if the preferred combination fails validation.
+Solo-developer vertical slices with passing relevant tests, maintained docs and reviewable changes. No commits without explicit authorization. US/USD checking+savings MVP, future liability-compatible ledger, online-first verified email/password, virtual Goals separate from independently evaluated Rewards, transaction-level classification and monthly recurring obligations. No bank integrations, debt tracking/interest/FX, payments, subscriptions, remote notifications or offline synchronization. Stale data does not block app access. Initial configurable policies: 7-day confirmations, 5-minute maximum snapshots with immediate mutation invalidation, 24-month reward forecasts. StyleSheet is explicitly approved for Phase 1; NativeWind deferred. No production provisioning in this phase.
 
 ## Phase 1 — Project Foundation
 
-**Objectives:** establish a reproducible WSL/macOS-compatible app foundation and prove the native delivery path early.
+**Objectives:** establish a reproducible WSL/macOS-compatible local app and prepare cloud native build workflow without requiring paid enrollment.
 
-**Dependencies:** explicit architecture approval; access to a physical iPhone and Expo account. Paid Apple enrollment when using signed development builds/TestFlight. Working network and a supported Node version.
+**Dependencies:** architecture approval (received); WSL Linux Node/npm, network access for packages. Physical iPhone, Expo credentials and paid Apple membership are external validation dependencies only, not local foundation prerequisites. No Docker or Supabase instance required.
 
 **Tasks:**
 
-- Resolve supported stable Expo/React Native/Router/NativeWind/React/Reanimated peers; record exact versions. Validate stable SDK 58 combination rather than assuming NativeWind's documented SDK 57 support covers it. If unsupported, present evidence and seek the specific fallback decision.
-- Initialize one Expo TypeScript app, npm lockfile, Node version pin, lint/format/typecheck/Jest scripts, jest-expo and React Native Testing Library. Install native peers with Expo tooling; add only small justified dependencies.
-- Create proposed directories, route layouts/auth and five tab placeholders, theme primitives, loading/error boundary and typed public environment validation. No real finance UI yet.
-- Document local setup, scripts and `.env.example`; ignore secrets and generated native folders. Create GitHub CI for static checks and component/domain test execution; define environment separation.
-- Verify ARM64 Supabase CLI/container feasibility and Docker Desktop WSL integration before relying on local stack. Document disposable hosted-test fallback if necessary.
-- Configure EAS development profile and stable development bundle identifier; create/install an early cloud iOS development build when credentials are available. Validate clean Prebuild on a disposable copy and EAS build, keeping native config declarative. Track SDK/client compatibility in a dependency register.
+- Verify current stable Expo's React/React Native/Router peers, Node minimum and future Reanimated matrix from primary sources/package manifests before initialization; document resolved versions. Use SDK 58 + StyleSheet per explicit fallback approval; no unsupported NativeWind combination.
+- Initialize single TypeScript Expo app, npm lockfile and pinned Node/npm; strict typecheck, lint, formatting, Jest/jest-expo/React Native Testing Library. Only install currently consumed libraries.
+- Build route layouts, five tabs and future-auth placeholder route; shared safe-area layout, typography/colors/spacing/radii, loading/error components. No auth or finance functionality.
+- Typed public config validation with optional paired Supabase URL/publishable key, no backend credentials required to launch. Add `.env.example`, secret/native ignores and Linux CI checks.
+- Prepare EAS development/preview/production profiles and provisional Savora app identifiers; no remote project creation, signed build or production resources. Document Expo linking/signing/device and future macOS procedures.
+- Verify reproducible `npm ci`, typecheck, lint, formatting, tests, Expo CLI/config/dependency diagnostics, Metro startup and iOS JS bundling. Record limitations honestly. Do not investigate Docker/ARM64 backend tooling until needed.
 
-**Acceptance criteria:** clean checkout installs from lockfile on WSL; typecheck/lint/tests pass; iPhone can open matching Expo Go (or explicitly approved client fallback), navigate placeholders, and load Metro via tunnel/LAN. Early EAS iOS development binary installs on phone; if Apple account unavailable, record native proof as pending and do not declare full Phase 1 complete. No macOS needed for these gates.
+**Acceptance criteria by dependency:**
 
-**Testing:** configuration smoke/component tests; real-phone connectivity and font/safe-area checks; Expo dependency diagnostics, clean cloud build and launch. No low-value tests asserting placeholder strings merely to fill coverage.
+| Category          | Required validation                                                                                                                                                             | Completion boundary                                                    |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| WSL only          | npm ci, strict TypeScript, lint/format, automated tests, five Router tabs/auth structure, safe-area conventions, validated public config, Metro and Expo dependency diagnostics | Local Phase 1 gates; no native-runtime claims                          |
+| Repository/config | Lockfile/toolchain pin, GitHub Actions, EAS profiles and complete setup docs; architecture preserved/consistent                                                                 | Local Phase 1 gates                                                    |
+| Physical iPhone   | Expo Go launch with matching SDK, tab navigation, safe areas/large text; record device/OS/client/results                                                                        | Separate unverified milestone if device unavailable                    |
+| Expo credentials  | Login, confirm owned identifier/Expo project, link project; cloud build submission                                                                                              | External milestone, not performed without credentials                  |
+| Apple enrollment  | Signed physical iOS development build install/launch, then TestFlight store binary                                                                                              | Deferred external milestone; not required for local Phase 1 completion |
+| macOS/Xcode       | Simulator/local native build/custom Swift debug                                                                                                                                 | Deferred until native development needs it                             |
 
-**Deliverables:** runnable foundation, reproducible toolchain/CI, environment/setup guide, compatibility evidence, development binary and native dependency register. No production resource configuration.
+**Testing:** meaningful public-config, route navigation and loading/error recovery tests; actual commands above plus device procedure. Expo Go is not evidence of standalone custom native dependency compatibility. JS bundle/Metro is not proof of signed native runtime.
+
+**Deliverables:** runnable local foundation, reproducible toolchain/CI, theme/layout/routes, validated public config, EAS preparation, version evidence and development/verification guide with explicit pending device/native milestones.
 
 ## Phase 2 — Authentication & Database
 
@@ -57,9 +64,10 @@ Approval must establish USD-only assets, email/password auth, online-first behav
 
 **Tasks:**
 
-- Build account creation/opening entries, archive rules, income/ordinary expense/reward expense recording and category management. Explain category roles.
+- Build account creation/opening entries, archive rules, income/ordinary expense/reward expense recording and category management. Keep category independent from operation ordinary/reward classification; allow spontaneous rewards without wishlist link.
 - Add same-currency transfers, annotated reconciliation adjustments and reverse/replace flows. Post financial dates explicitly; never overwrite balances or ledger history.
 - Build paginated/filterable transaction history and month/category summaries; distinguish income/expenses from transfers/opening/adjustments.
+- Build monthly recurring obligation templates/occurrences, linked partial payments and budget/separate coverage protections, review/waive/arrears flows without debt accounts.
 - Build monthly budget setup, line limits, unplanned allowance, overspend warnings and confirmation/completeness workflow. Preserve historical categories and periods.
 - Implement Dashboard actual totals and a snapshot breakdown; wire invalidations/revisions and disable stale actionable states. Add export/reset/delete controls under Profile with reauthentication.
 
@@ -90,21 +98,21 @@ Approval must establish USD-only assets, email/password auth, online-first behav
 
 ## Phase 5 — Rewards System
 
-**Objectives:** implement the differentiating purchase queue and transparent deterministic engine.
+**Objectives:** implement the independent reward choices and transparent deterministic engine.
 
 **Dependencies:** Phases 3–4, approved versioned engine policy and complete planning data.
 
 **Tasks:**
 
 - Implement pure engine and exact money DTO validation first, using all documented examples as golden fixtures; keep adapters outside domain.
-- Build wishlist create/edit/archive, accessible reorder, priority labels and reward category selection; keep queue order authoritative.
+- Build wishlist create/edit/archive, accessible display reorder, priority labels and expense category selection; ordering never gates eligibility.
 - Add plan setup/confirmation, I/X/G coherence checks, reserve/buffer controls, conditional projections, status reasons and expandable calculation breakdown.
 - Integrate consistent snapshots, revision checks, staleness/month rollover suppression and derived unlock progress; never store unlock as entitlement.
 - Implement actual-price purchase recording and reversal linkage atomically. Add subtle in-app celebration without spending pressure or notifications.
 
-**Acceptance criteria:** examples in engine doc produce exact expected values/dates; earlier queue prices consume headroom before later items. No future income unlocks current purchases. Missing/stale/deficit inputs visibly constrain status. A reward purchase consumes headroom once; reversal restores funds and item. Every projection displays assumptions and conditional language. Engine imports neither React nor Supabase.
+**Acceptance criteria:** examples in engine doc produce exact expected values/dates; each reward compares independently to shared headroom, with explicit alternative-choice disclosure; priority never gates unlocks. No future income unlocks current purchases. Missing/stale/deficit inputs visibly constrain status. A reward purchase consumes headroom once; reversal restores funds and item. Every projection displays assumptions and conditional language. Engine imports neither React nor Supabase.
 
-**Testing:** golden/boundary/invariant tests, monetary serialization/rounding, queue-prefix tests, date/horizon tests, SQL/domain parity and atomic purchase integration tests; component stale/error/assumptions accessibility and real-phone edit→reorder→purchase→reverse flow.
+**Testing:** golden/boundary/invariant tests, monetary serialization/rounding, independent-order/shared-funds tests, date/horizon tests, SQL/domain parity and atomic optional-wishlist/spontaneous purchase and reclassification integration tests; component stale/error/assumptions accessibility and real-phone edit→reorder→purchase→reverse flow.
 
 **Deliverables:** independently reusable engine, wishlist/reward screens, transparent breakdown, policy version metadata and complete core financial regression suite.
 
@@ -172,6 +180,6 @@ Approval must establish USD-only assets, email/password auth, online-first behav
 
 When a feature needs custom native code, document necessity and SDK/platform matrix, add typed capability interface, put Swift/SwiftUI implementation in local Expo module, use config plugins for project configuration, and switch that workflow to development builds. On temporary macOS access, clone/install same lockfile, Prebuild and use Xcode for local debug; verify clean regeneration and EAS cloud build. Add Android fallback/module without restructuring domain/data/screens. Do not hand-edit generated native files as the only source of a change. This is a feature-triggered checkpoint, not extra MVP native work.
 
-## Documentation completion and approval
+## Current authorization and validation reporting
 
-The five requested planning files are the deliverable for the present task. They require review, especially engine policy and ordinary/reward budget distinction. The next action is **explicit architecture approval**, followed by Phase 1; neither these task lists nor sample command names authorize application implementation or external account changes now.
+Architecture revisions and Phase 1 implementation are approved. No Phase 2 functionality is authorized by this task. Report local foundation gates separately from iPhone, Expo credential, signed iOS build, TestFlight and Xcode milestones. Lack of paid membership cannot block local completion; unexecuted native checks cannot be claimed successful. Source code remains shared across WSL/macOS, with future Swift isolated in Expo Modules/config plugins.
